@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  This template deploy a VPC with a pair of public and private subnets spread across two Availability Zones. It deploys an Internet Gateway, with a default route on the public subnets. It deploys a pair of NAT Gateway (one in each AZ)
+
+Parameters:
+
+  VpcCIDR:
+    Description: VPC CIDR 
+    Type: String
+    Default: 172.31.0.0/16
+
+  PublicSubnetCIDR:
+    Description: Public Subnet CIDR 
+    Type: String
+    Default: 172.31.1.0/24
+
+  PrivateSubnetCIDR:
+    Description: Private Subnet CIDR
+    Type: String
+    Default: 172.31.3.0/24
+
+Resources:
+  
+  PubPrivateVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      Tags:
+        - Key: name
+          Value: Custom VPC
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: My IGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      CidrBlock: !Ref PublicSubnetCIDR
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      MapPublicInOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Public Subnet 1 
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      CidrBlock: !Ref PrivateSubnetCIDR
+      AvailabilityZone: !Select [ 0, !GetAZs ] # ??????
+      MapPublicInOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Private Subnet 1 
+
+  PublicRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable1
+
+  NatPublicIP1:
+    Type: AWS::EC2::EIP
+    DependsOn: PubPrivateVPC
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatPublicIP1
+    Properties:
+      AllocationId: !GetAtt NatPublicIP1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Private Routes
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+Outputs:
+
+  PubPrivateVPC:
+    Description: A reference to the created vpc
+    Value: !Ref PubPrivateVPC
+    Export: 
+      Name: VPC-PROD
+  
+  PublicSubnet1:
+    Description: A list of the public subnets
+    Value: !Ref PublicSubnet1
+    Export: 
+      Name: Public-Subnet1
+  
+  PrivateSubnet1:
+    Description: A list of the private subnets
+    Value: !Ref PrivateSubnet1 
+    Export: 
+      Name: Private-Subnet1
